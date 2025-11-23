@@ -1,82 +1,93 @@
+// src/openaiClient.js
+require("dotenv").config();
 const OpenAI = require("openai");
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-
-if (!process.env.OPENAI_API_KEY) {
-  console.warn(
-    "[openaiClient] WARNING: OPENAI_API_KEY is not set. The bot will not be able to generate images."
-  );
-}
+const { toFile } = require("openai");
+const { Readable } = require("stream");
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
- * Generate a brand new image from a text prompt.
- * Returns a Buffer containing PNG data.
+ * Text → Image
+ * Returns a Buffer with PNG data.
  */
-async function generateImage({ prompt, size = "1024x1024", userId }) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured.");
-  }
-
-  const response = await client.images.generate({
+async function generateImage({
+  prompt,
+  size = "1024x1024",
+  quality = "high",
+  response_format = "b64_json",
+}) {
+  const result = await client.images.generate({
     model: "gpt-image-1",
     prompt,
     size,
-    user: userId,
+    quality,
+    response_format,
   });
 
-  const img = response.data?.[0];
-  if (!img || !img.b64_json) {
-    throw new Error("Invalid image response from OpenAI.");
-  }
-
-  return Buffer.from(img.b64_json, "base64");
+  const b64 = result.data[0].b64_json;
+  return Buffer.from(b64, "base64");
 }
 
 /**
- * Edit an existing image using a prompt.
- * Takes a Buffer with the original image and returns a Buffer (PNG).
+ * Helper: turn a Buffer into a Readable stream (required by toFile).
  */
-async function editImage({ prompt, imageBuffer, size = "1024x1024", userId }) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not configured.");
+function bufferToStream(buffer) {
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null);
+  return stream;
+}
+
+/**
+ * Image → Edited image
+ * Takes a Buffer of the original image and returns a Buffer of the edited PNG.
+ * Mask is optional (for inpainting).
+ */
+async function editImage({
+  imageBuffer,
+  maskBuffer = null,
+  prompt,
+  size = "1024x1024",
+  quality = "high",
+  response_format = "b64_json",
+}) {
+  if (!imageBuffer) {
+    throw new Error("editImage: imageBuffer is required");
+  }
+  if (!prompt) {
+    throw new Error("editImage: prompt is required");
   }
 
-  // The JS SDK accepts file streams for the `image` field.
-  // We write the buffer to a temp file and pass a read stream.
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aichainart-"));
-  const inputPath = path.join(tmpDir, "input.png");
-  fs.writeFileSync(inputPath, imageBuffer);
+  // Convert buffers to File objects understood by the OpenAI SDK
+  const imageFile = await toFile(bufferToStream(imageBuffer), "image.png", {
+    type: "image/png",
+  });
 
-  try {
-    const imageStream = fs.createReadStream(inputPath);
-
-    const response = await client.images.generate({
-      model: "gpt-image-1",
-      prompt,
-      size,
-      user: userId,
-      image: imageStream,
+  let maskFile;
+  if (maskBuffer) {
+    maskFile = await toFile(bufferToStream(maskBuffer), "mask.png", {
+      type: "image/png",
     });
-
-    const img = response.data?.[0];
-    if (!img || !img.b64_json) {
-      throw new Error("Invalid image response from OpenAI (edit).");
-    }
-
-    return Buffer.from(img.b64_json, "base64");
-  } finally {
-    // Best-effort cleanup of temp files
-    fs.unlink(inputPath, () => {});
-    fs.rmdir(tmpDir, () => {});
   }
+
+  const result = await client.images.edit({
+    model: "gpt-image-1",
+    image: imageFile,
+    ...(maskFile ? { mask: maskFile } : {}),
+    prompt,
+    size,
+    quality,
+    response_format,
+  });
+
+  const b64 = result.data[0].b64_json;
+  return Buffer.from(b64, "base64");
 }
 
 module.exports = {
+  client,
   generateImage,
   editImage,
 };
