@@ -1,64 +1,43 @@
-// src/openaiClient.js
 const OpenAI = require("openai");
-const { toFile } = require("openai/uploads");
-const config = require("./config");
 
-let openai = null;
+const apiKey = process.env.OPENAI_API_KEY;
 
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-} else {
+if (!apiKey) {
   console.warn(
-    "[OpenAI] OPENAI_API_KEY is not set. Image generation will fail until it is provided."
+    "[openaiClient] WARNING: OPENAI_API_KEY is not set. Image generation will fail until you configure it."
   );
 }
 
-function ensureClient() {
-  if (!openai) {
-    const err = new Error(
-      "The OpenAI API key is not configured on the server."
-    );
-    err.code = "NO_OPENAI_API_KEY";
-    throw err;
+const client = new OpenAI({
+  apiKey,
+});
+
+/**
+ * Generate one image from a text prompt using gpt-image-1.
+ *
+ * @param {{ prompt: string, size?: "1024x1024" | "1024x1792" | "1792x1024" }} options
+ * @returns {Promise<string>} base64 image (b64_json)
+ */
+async function generateImage({ prompt, size = "1024x1024" }) {
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY");
   }
-}
 
-async function generateImage(prompt) {
-  ensureClient();
-
-  const fullPrompt = `${prompt}\n\nStyle: high-quality digital illustration, detailed but clear, safe for work and suitable for sharing on Discord.`;
-
-  const result = await openai.images.generate({
+  const response = await client.images.generate({
     model: "gpt-image-1",
-    prompt: fullPrompt,
-    size: config.IMAGE_SIZE,
-    quality: config.IMAGE_QUALITY,
+    prompt,
+    n: 1,
+    size,
   });
 
-  const imageBase64 = result.data[0].b64_json;
-  return Buffer.from(imageBase64, "base64");
-}
+  const data = response.data?.[0];
+  if (!data || !data.b64_json) {
+    throw new Error("OpenAI did not return image data.");
+  }
 
-async function editImageFromBuffer(imageBuffer, filename, prompt) {
-  ensureClient();
-
-  const file = await toFile(imageBuffer, filename || "image.png");
-
-  const fullPrompt = `${prompt}\n\nKeep the main content of the original image and apply only the requested changes.`;
-
-  const result = await openai.images.edit({
-    model: "gpt-image-1",
-    image: [file],
-    prompt: fullPrompt,
-    size: config.IMAGE_SIZE,
-    quality: config.IMAGE_QUALITY,
-  });
-
-  const imageBase64 = result.data[0].b64_json;
-  return Buffer.from(imageBase64, "base64");
+  return data.b64_json;
 }
 
 module.exports = {
   generateImage,
-  editImageFromBuffer,
 };
