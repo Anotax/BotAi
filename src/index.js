@@ -13,11 +13,15 @@ const storage = require("./storage");
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 if (!DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN non configurato. Imposta la variabile d'ambiente o il file .env.");
+  console.error(
+    "❌ DISCORD_TOKEN is not configured. Set the environment variable or the .env file."
+  );
   process.exit(1);
 }
 if (!process.env.OPENAI_API_KEY) {
-  console.warn("⚠️ OPENAI_API_KEY non configurata. Il bot non potrà generare immagini finché non la imposti.");
+  console.warn(
+    "⚠️ OPENAI_API_KEY is not configured. The bot will not be able to generate images until you set it."
+  );
 }
 
 const client = new Client({
@@ -26,9 +30,11 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Caricamento comandi
+// Load slash commands
 const commandsPath = path.join(__dirname, "commands");
-const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith(".js"));
+const commandFiles = fs
+  .readdirSync(commandsPath)
+  .filter((file) => file.endsWith(".js"));
 
 for (const file of commandFiles) {
   const filePath = path.join(commandsPath, file);
@@ -37,13 +43,15 @@ for (const file of commandFiles) {
 
   if ("data" in command && "execute" in command) {
     client.commands.set(command.data.name, command);
-    console.log(`✅ Caricato comando /${command.data.name}`);
+    console.log(`✅ Loaded /${command.data.name} command`);
   } else {
-    console.warn(`⚠️ Il comando in ${filePath} non esporta "data" ed "execute".`);
+    console.warn(
+      `⚠️ The command at ${filePath} does not export both "data" and "execute".`
+    );
   }
 }
 
-// Log opzionali sul canale staff
+// Optional staff log utility
 async function sendStaffLog(message) {
   try {
     if (!config.STAFF_LOG_CHANNEL_ID) return;
@@ -51,24 +59,30 @@ async function sendStaffLog(message) {
     if (!channel || !channel.isTextBased()) return;
     await channel.send(message);
   } catch (err) {
-    console.warn("[Log] Impossibile inviare log al canale staff:", err.message);
+    console.warn(
+      "[Log] Unable to send log message to staff channel:",
+      err.message
+    );
   }
 }
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`🤖 Bot connesso come ${c.user.tag}`);
+  console.log(`🤖 Bot logged in as ${c.user.tag}`);
 
   try {
     const commandsData = client.commands.map((cmd) => cmd.data.toJSON());
     await c.application.commands.set(commandsData);
-    console.log(`✅ Comandi slash registrati (${commandsData.length})`);
+    console.log(`✅ Registered slash commands (${commandsData.length})`);
   } catch (err) {
-    console.error("❌ Errore durante la registrazione dei comandi slash:", err);
+    console.error(
+      "❌ Error while registering slash commands with Discord:",
+      err
+    );
   }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  // Comandi slash
+  // Slash commands
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -84,22 +98,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
         sendStaffLog,
       });
     } catch (err) {
-      console.error(`❌ Errore eseguendo comando /${interaction.commandName}:`, err);
+      console.error(
+        `❌ Error while executing /${interaction.commandName}:`,
+        err
+      );
       const content =
-        "Si è verificato un errore inatteso durante l'esecuzione del comando. Riprova più tardi.";
+        "An unexpected error occurred while executing this command. Please try again later.";
       if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ content, ephemeral: true }).catch(() => {});
+        await interaction
+          .followUp({ content, ephemeral: true })
+          .catch(() => {});
       } else {
-        await interaction.reply({ content, ephemeral: true }).catch(() => {});
+        await interaction
+          .reply({ content, ephemeral: true })
+          .catch(() => {});
       }
     }
     return;
   }
 
-  // Select menu per /edit
+  // String select menu for /edit
   if (interaction.isStringSelectMenu()) {
     const command = client.commands.get("edit");
-    if (command && typeof command.handleSelect === "function" && interaction.customId === "edit_select") {
+    if (
+      command &&
+      typeof command.handleSelect === "function" &&
+      interaction.customId === "edit_select"
+    ) {
       try {
         await command.handleSelect(interaction, {
           client,
@@ -111,20 +136,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
           sendStaffLog,
         });
       } catch (err) {
-        console.error("❌ Errore nella gestione del menu di selezione per /edit:", err);
+        console.error(
+          "❌ Error while handling selection menu for /edit:",
+          err
+        );
         const content =
-          "Si è verificato un errore mentre gestivo la tua selezione. Riprova.";
+          "An error occurred while processing your selection. Please try again.";
         if (interaction.deferred || interaction.replied) {
-          await interaction.followUp({ content, ephemeral: true }).catch(() => {});
+          await interaction
+            .followUp({ content, ephemeral: true })
+            .catch(() => {});
         } else {
-          await interaction.reply({ content, ephemeral: true }).catch(() => {});
+          await interaction
+            .reply({ content, ephemeral: true })
+            .catch(() => {});
         }
       }
     }
     return;
   }
 
-  // Modal per prompt di edit
+  // Modal submit for /edit prompt
   if (interaction.isModalSubmit()) {
     const command = client.commands.get("edit");
     if (
@@ -143,13 +175,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
           sendStaffLog,
         });
       } catch (err) {
-        console.error("❌ Errore nella gestione del modal per /edit:", err);
+        console.error("❌ Error while handling modal for /edit:", err);
         const content =
-          "Si è verificato un errore mentre processavo il tuo prompt. Riprova.";
+          "An error occurred while processing your prompt. Please try again.";
         if (interaction.deferred || interaction.replied) {
-          await interaction.followUp({ content, ephemeral: true }).catch(() => {});
+          await interaction
+            .followUp({ content, ephemeral: true })
+            .catch(() => {});
         } else {
-          await interaction.reply({ content, ephemeral: true }).catch(() => {});
+          await interaction
+            .reply({ content, ephemeral: true })
+            .catch(() => {});
         }
       }
     }
