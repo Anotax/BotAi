@@ -15,14 +15,14 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
 if (!DISCORD_TOKEN) {
   console.error(
-    "❌ DISCORD_TOKEN is not configured. Set the environment variable or the .env file."
+    "DISCORD_TOKEN is not configured. Set the environment variable or the .env file."
   );
   process.exit(1);
 }
 
 if (!process.env.OPENAI_API_KEY) {
   console.warn(
-    "⚠️ OPENAI_API_KEY is not configured. The bot will not be able to generate images until you set it."
+    "OPENAI_API_KEY is not configured. The bot will not be able to generate images until you set it."
   );
 }
 
@@ -45,10 +45,10 @@ for (const file of commandFiles) {
 
   if ("data" in command && "execute" in command) {
     client.commands.set(command.data.name, command);
-    console.log(`✅ Loaded /${command.data.name} command`);
+    console.log(`Loaded /${command.data.name} command`);
   } else {
     console.warn(
-      `⚠️ The command at ${filePath} does not export both "data" and "execute".`
+      `The command at ${filePath} does not export both "data" and "execute".`
     );
   }
 }
@@ -69,15 +69,15 @@ async function sendStaffLog(message) {
 }
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`🤖 Bot logged in as ${c.user.tag}`);
+  console.log(`Bot logged in as ${c.user.tag}`);
 
   try {
     const commandsData = client.commands.map((cmd) => cmd.data.toJSON());
     await c.application.commands.set(commandsData);
-    console.log(`✅ Registered slash commands (${commandsData.length})`);
+    console.log(`Registered slash commands (${commandsData.length})`);
   } catch (err) {
     console.error(
-      "❌ Error while registering slash commands with Discord:",
+      "Error while registering slash commands with Discord:",
       err
     );
   }
@@ -101,7 +101,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       });
     } catch (err) {
       console.error(
-        `❌ Error while executing /${interaction.commandName}:`,
+        `Error while executing /${interaction.commandName}:`,
         err
       );
       const content =
@@ -139,7 +139,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       } catch (err) {
         console.error(
-          "❌ Error while handling selection menu for /edit:",
+          "Error while handling selection menu for /edit:",
           err
         );
         const content =
@@ -177,4 +177,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
           sendStaffLog,
         });
       } catch (err) {
-        console.error("❌ Error while handling modal for /ed
+        console.error("Error while handling modal for /edit:", err);
+        const content =
+          "An error occurred while processing your prompt. Please try again.";
+        if (interaction.deferred || interaction.replied) {
+          await interaction
+            .followUp({ content, ephemeral: true })
+            .catch(() => {});
+        } else {
+          await interaction
+            .reply({ content, ephemeral: true })
+            .catch(() => {});
+        }
+      }
+    }
+  }
+});
+
+// ----- Start Discord bot -----
+client.login(DISCORD_TOKEN);
+
+// ----- Minimal HTTP server for Render health check -----
+const PORT = process.env.PORT || 3000;
+
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Discord AI image bot is running.\n");
+  })
+  .listen(PORT, () => {
+    console.log(`Health check server listening on port ${PORT}`);
+  });
