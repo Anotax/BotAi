@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const http = require("http");
 const { Client, Collection, GatewayIntentBits, Events } = require("discord.js");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -18,6 +19,7 @@ if (!DISCORD_TOKEN) {
   );
   process.exit(1);
 }
+
 if (!process.env.OPENAI_API_KEY) {
   console.warn(
     "⚠️ OPENAI_API_KEY is not configured. The bot will not be able to generate images until you set it."
@@ -30,7 +32,7 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load slash commands
+// ----- Load slash commands -----
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
   .readdirSync(commandsPath)
@@ -51,7 +53,7 @@ for (const file of commandFiles) {
   }
 }
 
-// Optional staff log utility
+// ----- Optional staff log utility -----
 async function sendStaffLog(message) {
   try {
     if (!config.STAFF_LOG_CHANNEL_ID) return;
@@ -82,7 +84,7 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  // Slash commands
+  // ----- Slash commands -----
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
@@ -117,7 +119,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // String select menu for /edit
+  // ----- String select menu for /edit -----
   if (interaction.isStringSelectMenu()) {
     const command = client.commands.get("edit");
     if (
@@ -156,7 +158,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // Modal submit for /edit prompt
+  // ----- Modal submit for /edit prompt -----
   if (interaction.isModalSubmit()) {
     const command = client.commands.get("edit");
     if (
@@ -175,21 +177,4 @@ client.on(Events.InteractionCreate, async (interaction) => {
           sendStaffLog,
         });
       } catch (err) {
-        console.error("❌ Error while handling modal for /edit:", err);
-        const content =
-          "An error occurred while processing your prompt. Please try again.";
-        if (interaction.deferred || interaction.replied) {
-          await interaction
-            .followUp({ content, ephemeral: true })
-            .catch(() => {});
-        } else {
-          await interaction
-            .reply({ content, ephemeral: true })
-            .catch(() => {});
-        }
-      }
-    }
-  }
-});
-
-client.login(DISCORD_TOKEN);
+        console.error("❌ Error while handling modal for /ed
