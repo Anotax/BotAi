@@ -1,5 +1,5 @@
+// src/commands/prompt.js
 const { SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
-const openaiClient = require("../openaiClient");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -8,52 +8,57 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName("prompt")
-        .setDescription("Describe the image you want.")
+        .setDescription("Description of the image you want.")
         .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("size")
+        .setDescription("Image size")
+        .addChoices(
+          { name: "1024x1024", value: "1024x1024" },
+          { name: "512x512", value: "512x512" },
+          { name: "256x256", value: "256x256" }
+        )
     ),
 
-  /**
-   * /prompt handler
-   * @param {import("discord.js").ChatInputCommandInteraction} interaction
-   */
-  async execute(interaction) {
-    const prompt = interaction.options.getString("prompt", true);
+  async execute(interaction, { openaiClient, storage }) {
+    const promptText = interaction.options.getString("prompt", true);
+    const size = interaction.options.getString("size") || "1024x1024";
 
-    // Let Discord know we are working (image generation can take several seconds)
+    console.log(
+      "[prompt] /prompt from",
+      interaction.user.id,
+      "attachment=false"
+    );
+
     await interaction.deferReply();
 
     try {
-      // Ask OpenAI for an image (returns a Buffer)
+      // Ask OpenAI for an image
       const imageBuffer = await openaiClient.generateImage({
-        prompt,
-        userId: interaction.user.id,
+        prompt: promptText,
+        size,
       });
 
-      const attachment = new AttachmentBuilder(imageBuffer, {
-        name: "image.png",
-      });
+      // Save it to disk
+      const { filePath, filename } = await storage.saveImageBuffer(
+        imageBuffer,
+        "gen"
+      );
+
+      // Send it back to Discord
+      const attachment = new AttachmentBuilder(filePath, { name: filename });
 
       await interaction.editReply({
-        content: `Here is your image for: \`${prompt}\``,
+        content: `Prompt: ${promptText}`,
         files: [attachment],
       });
-    } catch (error) {
-      console.error("[prompt] Error while generating image:", error);
-
-      let message =
-        "An error occurred while generating the image. Please double-check your prompt (and any input image) and try again.";
-
-      // Se mai dovessi tornare un 403 specifico sull'account, puoi personalizzare qui
-      if (error?.status === 403 || error?.statusCode === 403) {
-        message =
-          "The OpenAI account used by this bot is not allowed to generate images. Please contact the server administrators.";
-      }
-
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: message });
-      } else {
-        await interaction.reply({ content: message, ephemeral: true });
-      }
+    } catch (err) {
+      console.error("[prompt] Error while generating image:", err);
+      await interaction.editReply(
+        "An error occurred while generating the image. Please double-check your prompt (and any input image) and try again."
+      );
     }
   },
 };
