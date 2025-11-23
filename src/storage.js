@@ -1,29 +1,96 @@
 // src/storage.js
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
+const https = require("https");
 
-const OUTPUT_DIR =
-  process.env.IMAGE_OUTPUT_DIR || path.join(__dirname, "..", "output");
+const BASE_DIR = process.env.STORAGE_DIR || "/tmp/aichainart";
 
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+function ensureDir() {
+  if (!fs.existsSync(BASE_DIR)) {
+    fs.mkdirSync(BASE_DIR, { recursive: true });
+  }
 }
 
-async function saveImageBuffer(buffer, prefix = "image") {
-  const fileName = `${prefix}-${Date.now()}.png`;
-  const filePath = path.join(OUTPUT_DIR, fileName);
+/**
+ * Save an image buffer to disk and return path + filename.
+ */
+async function saveImageBuffer(buffer, filenamePrefix = "image") {
+  ensureDir();
+
+  const filename = `${filenamePrefix}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}.png`;
+
+  const filePath = path.join(BASE_DIR, filename);
   await fs.promises.writeFile(filePath, buffer);
-  return { fileName, filePath };
+
+  return { filePath, filename };
 }
 
-async function downloadAttachmentToBuffer(url) {
-  const response = await axios.get(url, { responseType: "arraybuffer" });
-  return Buffer.from(response.data);
+/**
+ * Download an image from a URL (e.g. Discord CDN) to a Buffer.
+ */
+async function downloadImageToBuffer(url) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed with status ${res.statusCode}`));
+          res.resume();
+          return;
+        }
+
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(chunks)));
+      })
+      .on("error", reject);
+  });
+}
+
+/**
+ * Download an image from a URL and save it to disk.
+ */
+async function downloadImageToFile(url, filenamePrefix = "image") {
+  ensureDir();
+
+  const filename = `${filenamePrefix}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}.png`;
+
+  const filePath = path.join(BASE_DIR, filename);
+  const fileStream = fs.createWriteStream(filePath);
+
+  await new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed with status ${res.statusCode}`));
+          res.resume();
+          return;
+        }
+
+        res.pipe(fileStream);
+        fileStream.on("finish", () => {
+          fileStream.close(resolve);
+        });
+      })
+      .on("error", (err) => {
+        fs.unlink(filePath, () => {});
+        reject(err);
+      });
+  });
+
+  return { filePath, filename };
+}
+
+function getImageReadStream(filePath) {
+  return fs.createReadStream(filePath);
 }
 
 module.exports = {
   saveImageBuffer,
-  downloadAttachmentToBuffer,
-  OUTPUT_DIR,
+  downloadImageToBuffer,
+  downloadImageToFile,
+  getImageReadStream,
 };
