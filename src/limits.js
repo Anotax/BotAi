@@ -1,27 +1,34 @@
 // src/limits.js
-// No artificial limits: we only track usage optionally,
-// but we NEVER block a request. OpenAI billing/credits
-// are the only real limit.
-
-/**
- * Dummy function used by /prompt (and possibly /edit).
- * Always allows the request.
- *
- * @param {string} userId - Discord user ID
- * @returns {Promise<{ allowed: boolean }>}
- */
-async function consumeUserDailyQuota(userId) {
-  // You can add optional logging here if you want to track usage,
-  // but do NOT block anything.
-
-  // Example (optional):
-  // console.log(`[limits] Allowing image generation for user ${userId}`);
-
-  return {
-    allowed: true,
-  };
-}
+// Stub for old limit system: no daily limits, no global budget.
+// All functions just say "ok, allowed".
 
 module.exports = {
-  consumeUserDailyQuota,
+  /**
+   * Per–user daily quota (DISABLED).
+   * Kept only so older code can call it without crashing.
+   */
+  async consumeUserDailyQuota(_userId, _options = {}) {
+    return {
+      allowed: true,
+      remaining: null, // null = "no real limit"
+    };
+  },
+
+  /**
+   * Global budget / token limit (DISABLED).
+   */
+  async consumeGlobalBudget(_amount, _options = {}) {
+    return {
+      allowed: true,
+      remaining: null,
+    };
+  },
+
+  /**
+   * Optional helper some code might call to see if a user is blocked.
+   * Always return false => nobody is blocked.
+   */
+  async isUserBlocked(_userId) {
+    return false;
+  },
 };
