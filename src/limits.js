@@ -1,79 +1,138 @@
+// src/limits.js
+// Simple usage limits: per-user daily quota + monthly global budget
+// Data is persisted in a JSON file so it works on Render without native modules.
+
+const fs = require("node:fs");
+const path = require("node:path");
 const config = require("./config");
-const db = require("./db");
 
-// Calcola in UTC l'inizio/fine del giorno corrente
-function getTodayRange() {
-  const now = new Date();
-  const start = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    0, 0, 0, 0
-  ));
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 1);
-  return { start: start.toISOString(), end: end.toISOString() };
+// Where we store usage counters
+const DATA_DIR = path.join(__dirname, "..", "data");
+const USAGE_FILE = path.join(DATA_DIR, "usage.json");
+
+// Default config (used if not present in config.js)
+const DEFAULT_DAILY_USER_LIMIT = 5;
+const DEFAULT_ESTIMATED_COST_PER_IMAGE_USD = 0.04;
+const DEFAULT_MONTHLY_BUDGET_USD = 10;
+
+// Ensure data directory exists
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
 }
 
-// Calcola in UTC l'inizio/fine del mese corrente
-function getThisMonthRange() {
-  const now = new Date();
-  const start = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    1,
-    0, 0, 0, 0
-  ));
-  const end = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth() + 1,
-    1,
-    0, 0, 0, 0
-  ));
-  return { start: start.toISOString(), end: end.toISOString() };
+// Load usage JSON from disk
+function loadUsage() {
+  ensureDataDir();
+
+  if (!fs.existsSync(USAGE_FILE)) {
+    return {
+      userDaily: {}, // { "YYYY-MM-DD": { userId: count } }
+      monthlyCost: {}, // { "YYYY-MM": costNumber }
+    };
+  }
+
+  try {
+    const raw = fs.readFileSync(USAGE_FILE, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error("[limits] Failed to read usage.json, resetting file:", err);
+    return {
+      userDaily: {},
+      monthlyCost: {},
+    };
+  }
 }
 
-// Verifica limiti giornalieri e budget mensile
-function canGenerate(userId) {
-  const dayRange = getTodayRange();
-  const usedToday = db.countUserGenerationsInRange(userId, dayRange.start, dayRange.end);
-  const remainingToday = config.MAX_DAILY_IMAGES_PER_USER - usedToday;
+// Save usage JSON to disk
+function saveUsage(data) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(USAGE_FILE, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.error("[limits] Failed to write usage.json:", err);
+  }
+}
 
-  if (remainingToday <= 0) {
+/**
+ * Consume one image generation from the user's daily quota and from the
+ * global monthly budget.
+ *
+ * This is the function used by /prompt (and can be reused by /edit).
+ *
+ * @param {string} userId - Discord user ID
+ * @returns {Promise<{
+ *   allowed: boolean,
+ *   reason?: "USER_DAILY_LIMIT" | "GLOBAL_BUDGET_EXCEEDED",
+ *   usedToday?: number,
+ *   remainingToday?: number,
+ *   limitToday?: number,
+ *   monthCost?: number,
+ *   monthlyBudget?: number
+ * }>}
+ */
+async function consumeUserDailyQuota(userId) {
+  const usage = loadUsage();
+
+  const now = new Date();
+  const todayKey = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const monthKey = todayKey.slice(0, 7); // YYYY-MM
+
+  const dailyLimit =
+    config.DAILY_USER_IMAGE_LIMIT ?? DEFAULT_DAILY_USER_LIMIT;
+  const costPerImage =
+    config.ESTIMATED_COST_PER_IMAGE_USD ??
+    DEFAULT_ESTIMATED_COST_PER_IMAGE_USD;
+  const monthlyBudget =
+    config.MONTHLY_BUDGET_USD ?? DEFAULT_MONTHLY_BUDGET_USD;
+
+  // Per-user daily usage
+  if (!usage.userDaily[todayKey]) {
+    usage.userDaily[todayKey] = {};
+  }
+  const usedToday = usage.userDaily[todayKey][userId] || 0;
+
+  if (usedToday >= dailyLimit) {
     return {
       allowed: false,
-      code: "DAILY_LIMIT",
+      reason: "USER_DAILY_LIMIT",
       usedToday,
       remainingToday: 0,
+      limitToday: dailyLimit,
     };
   }
 
-  const monthRange = getThisMonthRange();
-  const totalThisMonth = db.countGenerationsInRange(monthRange.start, monthRange.end);
-  const currentCost = totalThisMonth * config.COST_PER_IMAGE_USD;
-  const predictedCost = (totalThisMonth + 1) * config.COST_PER_IMAGE_USD;
+  // Monthly cost check
+  const currentMonthCost = usage.monthlyCost[monthKey] || 0;
+  const projectedCost = currentMonthCost + costPerImage;
 
-  if (predictedCost > config.MAX_MONTHLY_COST_USD) {
+  if (projectedCost > monthlyBudget) {
     return {
       allowed: false,
-      code: "BUDGET_EXCEEDED",
-      currentCost,
-      predictedCost,
-      maxBudget: config.MAX_MONTHLY_COST_USD,
+      reason: "GLOBAL_BUDGET_EXCEEDED",
+      monthCost: currentMonthCost,
+      monthlyBudget,
     };
   }
+
+  // All good: update counters
+  const newUsedToday = usedToday + 1;
+  usage.userDaily[todayKey][userId] = newUsedToday;
+  usage.monthlyCost[monthKey] = projectedCost;
+
+  saveUsage(usage);
 
   return {
     allowed: true,
-    code: "OK",
-    usedToday,
-    remainingToday,
-    currentCost,
-    predictedCost,
-    maxBudget: config.MAX_MONTHLY_COST_USD,
+    usedToday: newUsedToday,
+    remainingToday: Math.max(dailyLimit - newUsedToday, 0),
+    limitToday: dailyLimit,
+    monthCost: projectedCost,
+    monthlyBudget,
   };
 }
 
 module.exports = {
-  canGenerate,
+  consumeUserDailyQuota,
 };
