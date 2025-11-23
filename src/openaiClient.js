@@ -1,43 +1,82 @@
 const OpenAI = require("openai");
+const fs = require("node:fs");
+const path = require("node:path");
+const os = require("node:os");
 
-const apiKey = process.env.OPENAI_API_KEY;
-
-if (!apiKey) {
+if (!process.env.OPENAI_API_KEY) {
   console.warn(
-    "[openaiClient] WARNING: OPENAI_API_KEY is not set. Image generation will fail until you configure it."
+    "[openaiClient] WARNING: OPENAI_API_KEY is not set. The bot will not be able to generate images."
   );
 }
 
 const client = new OpenAI({
-  apiKey,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
- * Generate one image from a text prompt using gpt-image-1.
- *
- * @param {{ prompt: string, size?: "1024x1024" | "1024x1792" | "1792x1024" }} options
- * @returns {Promise<string>} base64 image (b64_json)
+ * Generate a brand new image from a text prompt.
+ * Returns a Buffer containing PNG data.
  */
-async function generateImage({ prompt, size = "1024x1024" }) {
-  if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY");
+async function generateImage({ prompt, size = "1024x1024", userId }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
   }
 
   const response = await client.images.generate({
     model: "gpt-image-1",
     prompt,
-    n: 1,
     size,
+    user: userId,
   });
 
-  const data = response.data?.[0];
-  if (!data || !data.b64_json) {
-    throw new Error("OpenAI did not return image data.");
+  const img = response.data?.[0];
+  if (!img || !img.b64_json) {
+    throw new Error("Invalid image response from OpenAI.");
   }
 
-  return data.b64_json;
+  return Buffer.from(img.b64_json, "base64");
+}
+
+/**
+ * Edit an existing image using a prompt.
+ * Takes a Buffer with the original image and returns a Buffer (PNG).
+ */
+async function editImage({ prompt, imageBuffer, size = "1024x1024", userId }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured.");
+  }
+
+  // The JS SDK accepts file streams for the `image` field.
+  // We write the buffer to a temp file and pass a read stream.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aichainart-"));
+  const inputPath = path.join(tmpDir, "input.png");
+  fs.writeFileSync(inputPath, imageBuffer);
+
+  try {
+    const imageStream = fs.createReadStream(inputPath);
+
+    const response = await client.images.generate({
+      model: "gpt-image-1",
+      prompt,
+      size,
+      user: userId,
+      image: imageStream,
+    });
+
+    const img = response.data?.[0];
+    if (!img || !img.b64_json) {
+      throw new Error("Invalid image response from OpenAI (edit).");
+    }
+
+    return Buffer.from(img.b64_json, "base64");
+  } finally {
+    // Best-effort cleanup of temp files
+    fs.unlink(inputPath, () => {});
+    fs.rmdir(tmpDir, () => {});
+  }
 }
 
 module.exports = {
   generateImage,
+  editImage,
 };
