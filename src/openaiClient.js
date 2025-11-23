@@ -1,29 +1,28 @@
 // src/openaiClient.js
-require("dotenv").config();
 const OpenAI = require("openai");
-const { toFile } = require("openai");
-const { Readable } = require("stream");
+const fs = require("fs");
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const apiKey = process.env.OPENAI_API_KEY;
+
+if (!apiKey) {
+  console.warn(
+    "[OpenAI] Warning: OPENAI_API_KEY is not set. Image generation will fail."
+  );
+}
+
+const client = new OpenAI({ apiKey });
 
 /**
- * Text → Image
+ * Generate a new image from a text prompt.
  * Returns a Buffer with PNG data.
  */
-async function generateImage({
-  prompt,
-  size = "1024x1024",
-  quality = "high",
-  response_format = "b64_json",
-}) {
+async function generateImage({ prompt, size = "1024x1024" }) {
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+
   const result = await client.images.generate({
     model: "gpt-image-1",
     prompt,
     size,
-    quality,
-    response_format,
   });
 
   const b64 = result.data[0].b64_json;
@@ -31,55 +30,20 @@ async function generateImage({
 }
 
 /**
- * Helper: turn a Buffer into a Readable stream (required by toFile).
+ * Edit an existing image using a text prompt.
+ * imagePath is a path on disk (PNG, JPG…).
+ * Returns a Buffer with PNG data.
  */
-function bufferToStream(buffer) {
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null);
-  return stream;
-}
+async function editImage({ prompt, imagePath, size = "1024x1024" }) {
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
 
-/**
- * Image → Edited image
- * Takes a Buffer of the original image and returns a Buffer of the edited PNG.
- * Mask is optional (for inpainting).
- */
-async function editImage({
-  imageBuffer,
-  maskBuffer = null,
-  prompt,
-  size = "1024x1024",
-  quality = "high",
-  response_format = "b64_json",
-}) {
-  if (!imageBuffer) {
-    throw new Error("editImage: imageBuffer is required");
-  }
-  if (!prompt) {
-    throw new Error("editImage: prompt is required");
-  }
-
-  // Convert buffers to File objects understood by the OpenAI SDK
-  const imageFile = await toFile(bufferToStream(imageBuffer), "image.png", {
-    type: "image/png",
-  });
-
-  let maskFile;
-  if (maskBuffer) {
-    maskFile = await toFile(bufferToStream(maskBuffer), "mask.png", {
-      type: "image/png",
-    });
-  }
+  const imageStream = fs.createReadStream(imagePath);
 
   const result = await client.images.edit({
     model: "gpt-image-1",
-    image: imageFile,
-    ...(maskFile ? { mask: maskFile } : {}),
+    image: imageStream,
     prompt,
     size,
-    quality,
-    response_format,
   });
 
   const b64 = result.data[0].b64_json;
@@ -87,7 +51,6 @@ async function editImage({
 }
 
 module.exports = {
-  client,
   generateImage,
   editImage,
 };
