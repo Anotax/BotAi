@@ -31,6 +31,10 @@ module.exports = {
         .setRequired(false)
     ),
 
+  /**
+   * @param {import("discord.js").ChatInputCommandInteraction} interaction
+   * @param {{ openaiClient: any, sendStaffLog?: (msg: string) => Promise<any> }} context
+   */
   async execute(interaction, { openaiClient, sendStaffLog }) {
     const prompt = interaction.options.getString("prompt", true);
     const size = interaction.options.getString("size") || "1024x1024";
@@ -41,7 +45,7 @@ module.exports = {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -51,33 +55,33 @@ module.exports = {
     try {
       const imageBuffer = await openaiClient.generateImage({
         prompt,
-        size
+        size,
       });
 
       const resultAttachment = new AttachmentBuilder(imageBuffer, {
-        name: "generated.png"
+        name: "generated.png",
       });
 
       let content = "Here is your generated image. 🎨";
 
       if (referenceAttachment) {
         content +=
-          "\n\nNote: the uploaded reference image is **not** edited by the model; it’s only used as visual context.";
+          "\n\nNote: the uploaded reference image is **not** edited by the model; it's only used as visual context.";
       }
 
       const files = [resultAttachment];
 
-      // Se vuoi ri-allegare anche l’immagine di riferimento, la aggiungiamo come secondo file
+      // Se vuoi ri-allegare anche l'immagine di riferimento come "memo" visivo
       if (referenceAttachment) {
         files.push({
           attachment: referenceAttachment.url,
-          name: referenceAttachment.name || "reference.png"
+          name: referenceAttachment.name || "reference.png",
         });
       }
 
       await interaction.editReply({
         content,
-        files
+        files,
       });
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
@@ -85,19 +89,25 @@ module.exports = {
       const message =
         "An error occurred while generating the image. Please try again later.";
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: message }).catch(() => {});
-      } else {
-        await interaction
-          .reply({ content: message, ephemeral: true })
-          .catch(() => {});
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: message });
+        } else {
+          await interaction.reply({ content: message, ephemeral: true });
+        }
+      } catch (replyErr) {
+        console.error("[prompt] Failed to send error reply:", replyErr);
       }
 
       if (sendStaffLog) {
-        sendStaffLog(
-          `Error in /prompt: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
-        ).catch(() => {});
+        try {
+          await sendStaffLog(
+            `Error in /prompt: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
+          );
+        } catch (logErr) {
+          console.error("[prompt] Failed to send staff log:", logErr);
+        }
       }
     }
-  }
+  },
 };
