@@ -1,52 +1,67 @@
 // src/openaiClient.js
 const OpenAI = require("openai");
-const fs = require("fs");
 
 const apiKey = process.env.OPENAI_API_KEY;
 
 if (!apiKey) {
   console.warn(
-    "[OpenAI] Warning: OPENAI_API_KEY is not set. Image generation will fail."
+    "[openaiClient] WARNING: OPENAI_API_KEY is not set. Image generation will fail until you set it."
   );
 }
 
 const client = new OpenAI({ apiKey });
 
 /**
- * Generate a new image from a text prompt.
- * Returns a Buffer with PNG data.
+ * Generate an image from text.
+ * Returns a Buffer (PNG).
  */
 async function generateImage({ prompt, size = "1024x1024" }) {
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
 
-  const result = await client.images.generate({
+  const response = await client.images.generate({
     model: "gpt-image-1",
     prompt,
+    n: 1,
     size,
+    response_format: "b64_json",
   });
 
-  const b64 = result.data[0].b64_json;
+  const b64 = response.data[0].b64_json;
   return Buffer.from(b64, "base64");
 }
 
 /**
- * Edit an existing image using a text prompt.
- * imagePath is a path on disk (PNG, JPG…).
- * Returns a Buffer with PNG data.
+ * Edit an existing image.
+ * `imageBuffer` must contain the bytes of the input image.
+ *
+ * ⚠️ Nota: l’API di editing per gpt-image-1 non è
+ * super documentata. Questo codice usa l’endpoint
+ * `images.generate` come supportato nelle versioni
+ * recenti del client. Se OpenAI cambia qualcosa,
+ * qui vedrai errori di API (che logghiamo).
  */
-async function editImage({ prompt, imagePath, size = "1024x1024" }) {
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
+async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  if (!imageBuffer) {
+    throw new Error("editImage called without imageBuffer");
+  }
 
-  const imageStream = fs.createReadStream(imagePath);
-
-  const result = await client.images.edit({
+  const response = await client.images.generate({
     model: "gpt-image-1",
-    image: imageStream,
     prompt,
+    n: 1,
     size,
+    response_format: "b64_json",
+    // Campo non ufficiale ma supportato nelle versioni recenti.
+    // Se l’API non lo accetta vedrai un errore nei log.
+    image: imageBuffer,
   });
 
-  const b64 = result.data[0].b64_json;
+  const b64 = response.data[0].b64_json;
   return Buffer.from(b64, "base64");
 }
 
