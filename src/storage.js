@@ -10,5 +10,5 @@ async function downloadDiscordAttachment(url) {
 }
 
 module.exports = {
-  downloadDiscordAttachment,
+  downloadDiscordAttachment
 };
