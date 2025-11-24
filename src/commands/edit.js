@@ -1,7 +1,7 @@
 // src/commands/edit.js
 const {
   SlashCommandBuilder,
-  AttachmentBuilder,
+  AttachmentBuilder
 } = require("discord.js");
 
 const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
@@ -47,7 +47,7 @@ module.exports = {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -58,7 +58,7 @@ module.exports = {
     ) {
       await interaction.reply({
         content: "Please upload a valid image file.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -66,32 +66,31 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // 1) scarico l'immagine da Discord
+      // 1) scarico l'immagine da Discord (src/storage.js)
       const imageBuffer = await storage.downloadDiscordAttachment(
         attachment.url
       );
 
       // 2) la mando all'API per l'edit
       const editedBuffer = await openaiClient.editImage({
-        prompt,
-        size,
         imageBuffer,
+        prompt,
+        size
       });
 
       const editedAttachment = new AttachmentBuilder(editedBuffer, {
-        name: "edited.png",
+        name: "edited.png"
       });
 
       await interaction.editReply({
         content: "Here is your edited image. ✂️",
-        files: [editedAttachment],
+        files: [editedAttachment]
       });
     } catch (err) {
       console.error("[edit] Error while editing image:", err);
 
       let message =
         "An error occurred while editing the image. Please check your prompt and input image, then try again.";
-
       if (err && err.message) {
         message += `\n\nDetails: \`${err.message}\``;
       }
@@ -114,5 +113,5 @@ module.exports = {
         ).catch(() => {});
       }
     }
-  },
+  }
 };
