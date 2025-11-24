@@ -1,6 +1,8 @@
 // src/commands/prompt.js
 const { SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 
+const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("prompt")
@@ -8,57 +10,97 @@ module.exports = {
     .addStringOption((option) =>
       option
         .setName("prompt")
-        .setDescription("Description of the image you want.")
+        .setDescription("Describe the image you want to generate.")
         .setRequired(true)
     )
     .addStringOption((option) =>
       option
         .setName("size")
-        .setDescription("Image size")
+        .setDescription("Output image size.")
         .addChoices(
-          { name: "1024x1024", value: "1024x1024" },
-          { name: "512x512", value: "512x512" },
-          { name: "256x256", value: "256x256" }
+          { name: "512 x 512", value: "512x512" },
+          { name: "768 x 768", value: "768x768" },
+          { name: "1024 x 1024", value: "1024x1024" }
         )
+        .setRequired(false)
+    )
+    .addAttachmentOption((option) =>
+      option
+        .setName("reference_image")
+        .setDescription("Optional reference image (not directly edited).")
+        .setRequired(false)
     ),
 
-  async execute(interaction, { openaiClient, storage }) {
-    const promptText = interaction.options.getString("prompt", true);
-    const size = interaction.options.getString("size") || "1024x1024";
+  async execute(interaction, { openaiClient, sendStaffLog }) {
+    const prompt = interaction.options.getString("prompt", true);
+    const size =
+      interaction.options.getString("size") || "1024x1024";
+    const referenceAttachment =
+      interaction.options.getAttachment("reference_image");
 
-    console.log(
-      "[prompt] /prompt from",
-      interaction.user.id,
-      "attachment=false"
-    );
+    if (!ALLOWED_SIZES.includes(size)) {
+      await interaction.reply({
+        content:
+          "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
+        ephemeral: true,
+      });
+      return;
+    }
 
     await interaction.deferReply();
 
     try {
-      // Ask OpenAI for an image
       const imageBuffer = await openaiClient.generateImage({
-        prompt: promptText,
+        prompt,
         size,
       });
 
-      // Save it to disk
-      const { filePath, filename } = await storage.saveImageBuffer(
-        imageBuffer,
-        "gen"
-      );
+      const resultAttachment = new AttachmentBuilder(imageBuffer, {
+        name: "generated.png",
+      });
 
-      // Send it back to Discord
-      const attachment = new AttachmentBuilder(filePath, { name: filename });
+      let content =
+        "Here is your generated image. 🎨";
+
+      if (referenceAttachment) {
+        content +=
+          "\n\nNote: the uploaded reference image is **not** edited by the model; it’s only used as visual context.";
+      }
+
+      const files = [resultAttachment];
+
+      // Se vuoi ri-allegare anche l’immagine di riferimento, la puoi aggiungere così:
+      // (Discord accetta URL esterni come allegati)
+      if (referenceAttachment) {
+        files.push({
+          attachment: referenceAttachment.url,
+          name: referenceAttachment.name || "reference.png",
+        });
+      }
 
       await interaction.editReply({
-        content: `Prompt: ${promptText}`,
-        files: [attachment],
+        content,
+        files,
       });
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
-      await interaction.editReply(
-        "An error occurred while generating the image. Please double-check your prompt (and any input image) and try again."
-      );
+
+      const message =
+        "An error occurred while generating the image. Please double-check your prompt (and any input image) and try again.";
+
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: message }).catch(() => {});
+      } else {
+        await interaction
+          .reply({ content: message, ephemeral: true })
+          .catch(() => {});
+      }
+
+      if (sendStaffLog) {
+        sendStaffLog(
+          `Error in /prompt: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
+        ).catch(() => {});
+      }
     }
   },
 };
