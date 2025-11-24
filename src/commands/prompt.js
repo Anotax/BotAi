@@ -27,7 +27,7 @@ module.exports = {
     .addAttachmentOption((option) =>
       option
         .setName("reference_image")
-        .setDescription("Optional reference image (not directly edited).")
+        .setDescription("Optional reference image (visual inspiration).")
         .setRequired(false)
     ),
 
@@ -53,6 +53,8 @@ module.exports = {
     await interaction.deferReply();
 
     try {
+      // Nota: l'immagine di riferimento NON viene mandata all'API,
+      // è solo un supporto visivo che ri-allego di fianco al risultato.
       const imageBuffer = await openaiClient.generateImage({
         prompt,
         size,
@@ -66,12 +68,11 @@ module.exports = {
 
       if (referenceAttachment) {
         content +=
-          "\n\nNote: the uploaded reference image is **not** edited by the model; it's only used as visual context.";
+          "\n\n(Reference image attached for context; the model does not edit it directly.)";
       }
 
       const files = [resultAttachment];
 
-      // Se vuoi ri-allegare anche l'immagine di riferimento come "memo" visivo
       if (referenceAttachment) {
         files.push({
           attachment: referenceAttachment.url,
@@ -86,27 +87,30 @@ module.exports = {
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
 
-      const message =
+      let message =
         "An error occurred while generating the image. Please try again later.";
+
+      if (err && err.message) {
+        // Aggiungo info extra utili per debug (senza esporre dati sensibili)
+        message += `\n\nDetails: \`${err.message}\``;
+      }
 
       try {
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: message });
+          await interaction.editReply({ content: message }).catch(() => {});
         } else {
-          await interaction.reply({ content: message, ephemeral: true });
+          await interaction
+            .reply({ content: message, ephemeral: true })
+            .catch(() => {});
         }
       } catch (replyErr) {
         console.error("[prompt] Failed to send error reply:", replyErr);
       }
 
       if (sendStaffLog) {
-        try {
-          await sendStaffLog(
-            `Error in /prompt: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
-          );
-        } catch (logErr) {
-          console.error("[prompt] Failed to send staff log:", logErr);
-        }
+        sendStaffLog(
+          `Error in /prompt: \`${err?.message}\`\n\`\`\`${err?.stack}\`\`\``
+        ).catch(() => {});
       }
     }
   },
