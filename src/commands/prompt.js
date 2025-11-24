@@ -1,8 +1,6 @@
 // src/commands/prompt.js
 const { SlashCommandBuilder, AttachmentBuilder } = require("discord.js");
 
-const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("prompt")
@@ -12,17 +10,6 @@ module.exports = {
         .setName("prompt")
         .setDescription("Describe the image you want to generate.")
         .setRequired(true)
-    )
-    .addStringOption((option) =>
-      option
-        .setName("size")
-        .setDescription("Output image size.")
-        .addChoices(
-          { name: "512 x 512", value: "512x512" },
-          { name: "768 x 768", value: "768x768" },
-          { name: "1024 x 1024", value: "1024x1024" }
-        )
-        .setRequired(false)
     )
     .addAttachmentOption((option) =>
       option
@@ -37,25 +24,15 @@ module.exports = {
    */
   async execute(interaction, { openaiClient, sendStaffLog }) {
     const prompt = interaction.options.getString("prompt", true);
-    const size = interaction.options.getString("size") || "1024x1024";
     const referenceAttachment =
       interaction.options.getAttachment("reference_image");
-
-    if (!ALLOWED_SIZES.includes(size)) {
-      await interaction.reply({
-        content:
-          "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true
-      });
-      return;
-    }
 
     await interaction.deferReply();
 
     try {
+      // Nessuna size: usiamo il default definito in openaiClient (1024x1024)
       const imageBuffer = await openaiClient.generateImage({
-        prompt,
-        size
+        prompt
       });
 
       const resultAttachment = new AttachmentBuilder(imageBuffer, {
