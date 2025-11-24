@@ -4,8 +4,6 @@ const {
   AttachmentBuilder
 } = require("discord.js");
 
-const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName("edit")
@@ -21,17 +19,6 @@ module.exports = {
         .setName("prompt")
         .setDescription("Describe how you want to edit the image.")
         .setRequired(true)
-    )
-    .addStringOption((option) =>
-      option
-        .setName("size")
-        .setDescription("Output image size.")
-        .addChoices(
-          { name: "512 x 512", value: "512x512" },
-          { name: "768 x 768", value: "768x768" },
-          { name: "1024 x 1024", value: "1024x1024" }
-        )
-        .setRequired(false)
     ),
 
   /**
@@ -41,16 +28,6 @@ module.exports = {
   async execute(interaction, { openaiClient, storage, sendStaffLog }) {
     const attachment = interaction.options.getAttachment("image", true);
     const prompt = interaction.options.getString("prompt", true);
-    const size = interaction.options.getString("size") || "1024x1024";
-
-    if (!ALLOWED_SIZES.includes(size)) {
-      await interaction.reply({
-        content:
-          "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true
-      });
-      return;
-    }
 
     if (
       attachment.contentType &&
@@ -66,16 +43,16 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // 1) scarico l'immagine da Discord (src/storage.js)
+      // 1) Scarico l'immagine da Discord
       const imageBuffer = await storage.downloadDiscordAttachment(
         attachment.url
       );
 
-      // 2) la mando all'API per l'edit
+      // 2) La mando all'API per l'edit
+      // Nessuna size: usiamo il default di openaiClient (1024x1024)
       const editedBuffer = await openaiClient.editImage({
         imageBuffer,
-        prompt,
-        size
+        prompt
       });
 
       const editedAttachment = new AttachmentBuilder(editedBuffer, {
