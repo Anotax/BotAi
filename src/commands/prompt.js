@@ -45,7 +45,7 @@ module.exports = {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -53,15 +53,13 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // Nota: l'immagine di riferimento NON viene mandata all'API,
-      // è solo un supporto visivo che ri-allego di fianco al risultato.
       const imageBuffer = await openaiClient.generateImage({
         prompt,
-        size,
+        size
       });
 
       const resultAttachment = new AttachmentBuilder(imageBuffer, {
-        name: "generated.png",
+        name: "generated.png"
       });
 
       let content = "Here is your generated image. 🎨";
@@ -76,22 +74,20 @@ module.exports = {
       if (referenceAttachment) {
         files.push({
           attachment: referenceAttachment.url,
-          name: referenceAttachment.name || "reference.png",
+          name: referenceAttachment.name || "reference.png"
         });
       }
 
       await interaction.editReply({
         content,
-        files,
+        files
       });
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
 
       let message =
         "An error occurred while generating the image. Please try again later.";
-
       if (err && err.message) {
-        // Aggiungo info extra utili per debug (senza esporre dati sensibili)
         message += `\n\nDetails: \`${err.message}\``;
       }
 
@@ -113,5 +109,5 @@ module.exports = {
         ).catch(() => {});
       }
     }
-  },
+  }
 };
