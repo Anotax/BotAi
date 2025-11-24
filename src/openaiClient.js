@@ -25,7 +25,7 @@ async function generateImage({ prompt, size = "1024x1024" }) {
     prompt,
     n: 1,
     size,
-    response_format: "b64_json",
+    response_format: "b64_json"
   });
 
   const b64 = response.data[0].b64_json;
@@ -35,12 +35,7 @@ async function generateImage({ prompt, size = "1024x1024" }) {
 /**
  * Edit an existing image.
  * `imageBuffer` must contain the bytes of the input image.
- *
- * ⚠️ Nota: l’API di editing per gpt-image-1 non è
- * super documentata. Questo codice usa l’endpoint
- * `images.generate` come supportato nelle versioni
- * recenti del client. Se OpenAI cambia qualcosa,
- * qui vedrai errori di API (che logghiamo).
+ * Returns a Buffer (PNG).
  */
 async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
   if (!apiKey) {
@@ -50,15 +45,14 @@ async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
     throw new Error("editImage called without imageBuffer");
   }
 
-  const response = await client.images.generate({
+  // L’SDK supporta direttamente Buffer come file input
+  const response = await client.images.edit({
     model: "gpt-image-1",
+    image: imageBuffer,
     prompt,
     n: 1,
     size,
-    response_format: "b64_json",
-    // Campo non ufficiale ma supportato nelle versioni recenti.
-    // Se l’API non lo accetta vedrai un errore nei log.
-    image: imageBuffer,
+    response_format: "b64_json"
   });
 
   const b64 = response.data[0].b64_json;
@@ -67,5 +61,5 @@ async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
 
 module.exports = {
   generateImage,
-  editImage,
+  editImage
 };
