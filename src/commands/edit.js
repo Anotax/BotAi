@@ -1,7 +1,7 @@
 // src/commands/edit.js
 const {
   SlashCommandBuilder,
-  AttachmentBuilder,
+  AttachmentBuilder
 } = require("discord.js");
 
 const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
@@ -37,26 +37,25 @@ module.exports = {
   async execute(interaction, { openaiClient, storage, sendStaffLog }) {
     const attachment = interaction.options.getAttachment("image", true);
     const prompt = interaction.options.getString("prompt", true);
-    const size =
-      interaction.options.getString("size") || "1024x1024";
+    const size = interaction.options.getString("size") || "1024x1024";
 
     if (!ALLOWED_SIZES.includes(size)) {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
 
-    // Controllo basilare che sia un'immagine
+    // Controllo che sia effettivamente un file immagine
     if (
       attachment.contentType &&
       !attachment.contentType.startsWith("image/")
     ) {
       await interaction.reply({
         content: "Please upload a valid image file.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -64,25 +63,25 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // 1) scarico l’immagine da Discord
+      // 1) Scarico l’immagine da Discord
       const imageBuffer = await storage.downloadDiscordAttachment(
         attachment.url
       );
 
-      // 2) chiamo l’API di editing
+      // 2) Chiamo l’API di editing
       const editedBuffer = await openaiClient.editImage({
         prompt,
         size,
-        imageBuffer,
+        imageBuffer
       });
 
       const editedAttachment = new AttachmentBuilder(editedBuffer, {
-        name: "edited.png",
+        name: "edited.png"
       });
 
       await interaction.editReply({
         content: "Here is your edited image. ✂️",
-        files: [editedAttachment],
+        files: [editedAttachment]
       });
     } catch (err) {
       console.error("[edit] Error while editing image:", err);
@@ -104,5 +103,5 @@ module.exports = {
         ).catch(() => {});
       }
     }
-  },
+  }
 };
