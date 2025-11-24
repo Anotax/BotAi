@@ -1,7 +1,7 @@
 // src/commands/edit.js
 const {
   SlashCommandBuilder,
-  AttachmentBuilder
+  AttachmentBuilder,
 } = require("discord.js");
 
 const ALLOWED_SIZES = ["512x512", "768x768", "1024x1024"];
@@ -34,6 +34,10 @@ module.exports = {
         .setRequired(false)
     ),
 
+  /**
+   * @param {import("discord.js").ChatInputCommandInteraction} interaction
+   * @param {{ openaiClient: any, storage: any, sendStaffLog?: (msg: string) => Promise<any> }} context
+   */
   async execute(interaction, { openaiClient, storage, sendStaffLog }) {
     const attachment = interaction.options.getAttachment("image", true);
     const prompt = interaction.options.getString("prompt", true);
@@ -43,19 +47,19 @@ module.exports = {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
 
-    // Controllo che sia effettivamente un file immagine
+    // Basic check that the uploaded file is an image
     if (
       attachment.contentType &&
       !attachment.contentType.startsWith("image/")
     ) {
       await interaction.reply({
         content: "Please upload a valid image file.",
-        ephemeral: true
+        ephemeral: true,
       });
       return;
     }
@@ -63,25 +67,25 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // 1) Scarico l’immagine da Discord
+      // 1) Download the image from Discord
       const imageBuffer = await storage.downloadDiscordAttachment(
         attachment.url
       );
 
-      // 2) Chiamo l’API di editing
+      // 2) Send it to OpenAI for editing
       const editedBuffer = await openaiClient.editImage({
         prompt,
         size,
-        imageBuffer
+        imageBuffer,
       });
 
       const editedAttachment = new AttachmentBuilder(editedBuffer, {
-        name: "edited.png"
+        name: "edited.png",
       });
 
       await interaction.editReply({
         content: "Here is your edited image. ✂️",
-        files: [editedAttachment]
+        files: [editedAttachment],
       });
     } catch (err) {
       console.error("[edit] Error while editing image:", err);
@@ -89,19 +93,25 @@ module.exports = {
       const message =
         "An error occurred while editing the image. Please check your prompt and input image, then try again.";
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: message }).catch(() => {});
-      } else {
-        await interaction
-          .reply({ content: message, ephemeral: true })
-          .catch(() => {});
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: message });
+        } else {
+          await interaction.reply({ content: message, ephemeral: true });
+        }
+      } catch (replyErr) {
+        console.error("[edit] Failed to send error reply:", replyErr);
       }
 
       if (sendStaffLog) {
-        sendStaffLog(
-          `Error in /edit: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
-        ).catch(() => {});
+        try {
+          await sendStaffLog(
+            `Error in /edit: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
+          );
+        } catch (logErr) {
+          console.error("[edit] Failed to send staff log:", logErr);
+        }
       }
     }
-  }
+  },
 };
