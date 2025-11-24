@@ -1,5 +1,8 @@
 // src/openaiClient.js
-// Wrapper minimal per le Image API di OpenAI usando axios.
+// Wrapper per le Image API di OpenAI usando axios (niente SDK).
+// Supporta:
+//  - generateImage(prompt, size)
+//  - editImage(imageBuffer, prompt, size)
 
 const axios = require("axios");
 const FormData = require("form-data");
@@ -13,30 +16,25 @@ if (!apiKey) {
   );
 }
 
-function buildAuthHeaders(extra = {}) {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    ...extra,
-  };
-}
-
-function wrapOpenAIError(err, context) {
-  let detail = "";
-
-  // Error HTTP da OpenAI
+function normalizeOpenAIError(err, context) {
+  // Provo a ricavare un messaggio utile
   if (err.response && err.response.data && err.response.data.error) {
     const e = err.response.data.error;
-    detail = `${e.type || "openai_error"}: ${e.message || "Unknown error"}`;
-  } else if (err.message) {
-    // Error di rete / runtime
-    detail = err.message;
-  } else {
-    detail = String(err);
+    const msg = `${context}: ${e.type || "openai_error"}: ${
+      e.message || "Unknown error"
+    }`;
+    const wrapped = new Error(msg);
+    wrapped.originalError = err;
+    return wrapped;
   }
 
-  const wrapped = new Error(`[${context}] ${detail}`);
-  wrapped.originalError = err;
-  return wrapped;
+  if (err.message) {
+    const wrapped = new Error(`${context}: ${err.message}`);
+    wrapped.originalError = err;
+    return wrapped;
+  }
+
+  return new Error(`${context}: ${String(err)}`);
 }
 
 /**
@@ -59,47 +57,57 @@ async function generateImage({ prompt, size = "1024x1024" }) {
         model: "gpt-image-1",
         prompt,
         n: 1,
-        size,
-        // response_format opzionale; lasciamo b64_json perché è comodo
-        response_format: "b64_json",
+        size
+        // niente response_format: l'API torna già b64_json di default
       },
       {
         headers: {
-          ...buildAuthHeaders({
-            "Content-Type": "application/json",
-          }),
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
         },
         maxBodyLength: Infinity,
-        maxContentLength: Infinity,
+        maxContentLength: Infinity
       }
     );
 
     if (
       !res.data ||
       !Array.isArray(res.data.data) ||
-      !res.data.data[0] ||
-      !res.data.data[0].b64_json
+      !res.data.data[0]
     ) {
       throw new Error("Unexpected response format from /images/generations");
     }
 
-    const b64 = res.data.data[0].b64_json;
-    return Buffer.from(b64, "base64");
+    const item = res.data.data[0];
+
+    if (item.b64_json) {
+      return Buffer.from(item.b64_json, "base64");
+    }
+
+    if (item.url) {
+      // fallback nel caso qualche account restituisca URL
+      const img = await axios.get(item.url, { responseType: "arraybuffer" });
+      return Buffer.from(img.data);
+    }
+
+    throw new Error(
+      "Image response has neither b64_json nor url fields from /images/generations"
+    );
   } catch (err) {
-    throw wrapOpenAIError(err, "generateImage");
+    throw normalizeOpenAIError(err, "generateImage");
   }
 }
 
 /**
- * Edit an existing image with a prompt.
+ * Edit an existing image.
  * Returns a Buffer (PNG).
  *
  * @param {Object} params
- * @param {string} params.prompt
  * @param {Buffer} params.imageBuffer
+ * @param {string} params.prompt
  * @param {string} [params.size="1024x1024"]
  */
-async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
+async function editImage({ imageBuffer, prompt, size = "1024x1024" }) {
   if (!apiKey) {
     throw new Error("[editImage] OPENAI_API_KEY is not set");
   }
@@ -112,43 +120,49 @@ async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
     form.append("model", "gpt-image-1");
     form.append("prompt", prompt);
     form.append("size", size);
+    // niente n e niente response_format
     form.append("image", imageBuffer, {
       filename: "image.png",
-      contentType: "image/png",
+      contentType: "image/png"
     });
 
     const res = await axios.post(`${BASE_URL}/images/edits`, form, {
       headers: {
-        ...buildAuthHeaders(form.getHeaders()),
+        Authorization: `Bearer ${apiKey}`,
+        ...form.getHeaders()
       },
       maxBodyLength: Infinity,
-      maxContentLength: Infinity,
+      maxContentLength: Infinity
     });
 
     if (
       !res.data ||
       !Array.isArray(res.data.data) ||
-      !res.data.data[0] ||
-      (!res.data.data[0].b64_json && !res.data.data[0].url)
+      !res.data.data[0]
     ) {
       throw new Error("Unexpected response format from /images/edits");
     }
 
-    // Preferiamo b64_json se disponibile, altrimenti scarichiamo la URL
-    if (res.data.data[0].b64_json) {
-      const b64 = res.data.data[0].b64_json;
-      return Buffer.from(b64, "base64");
+    const item = res.data.data[0];
+
+    if (item.b64_json) {
+      return Buffer.from(item.b64_json, "base64");
     }
 
-    const url = res.data.data[0].url;
-    const img = await axios.get(url, { responseType: "arraybuffer" });
-    return Buffer.from(img.data);
+    if (item.url) {
+      const img = await axios.get(item.url, { responseType: "arraybuffer" });
+      return Buffer.from(img.data);
+    }
+
+    throw new Error(
+      "Image response has neither b64_json nor url fields from /images/edits"
+    );
   } catch (err) {
-    throw wrapOpenAIError(err, "editImage");
+    throw normalizeOpenAIError(err, "editImage");
   }
 }
 
 module.exports = {
   generateImage,
-  editImage,
+  editImage
 };
