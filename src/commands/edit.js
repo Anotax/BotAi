@@ -52,7 +52,6 @@ module.exports = {
       return;
     }
 
-    // Basic check that the uploaded file is an image
     if (
       attachment.contentType &&
       !attachment.contentType.startsWith("image/")
@@ -67,12 +66,12 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      // 1) Download the image from Discord
+      // 1) scarico l'immagine da Discord
       const imageBuffer = await storage.downloadDiscordAttachment(
         attachment.url
       );
 
-      // 2) Send it to OpenAI for editing
+      // 2) la mando all'API per l'edit
       const editedBuffer = await openaiClient.editImage({
         prompt,
         size,
@@ -90,27 +89,29 @@ module.exports = {
     } catch (err) {
       console.error("[edit] Error while editing image:", err);
 
-      const message =
+      let message =
         "An error occurred while editing the image. Please check your prompt and input image, then try again.";
+
+      if (err && err.message) {
+        message += `\n\nDetails: \`${err.message}\``;
+      }
 
       try {
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: message });
+          await interaction.editReply({ content: message }).catch(() => {});
         } else {
-          await interaction.reply({ content: message, ephemeral: true });
+          await interaction
+            .reply({ content: message, ephemeral: true })
+            .catch(() => {});
         }
       } catch (replyErr) {
         console.error("[edit] Failed to send error reply:", replyErr);
       }
 
       if (sendStaffLog) {
-        try {
-          await sendStaffLog(
-            `Error in /edit: \`${err.message}\`\n\`\`\`${err.stack}\`\`\``
-          );
-        } catch (logErr) {
-          console.error("[edit] Failed to send staff log:", logErr);
-        }
+        sendStaffLog(
+          `Error in /edit: \`${err?.message}\`\n\`\`\`${err?.stack}\`\`\``
+        ).catch(() => {});
       }
     }
   },
