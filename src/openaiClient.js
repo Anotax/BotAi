@@ -1,12 +1,11 @@
 // src/openaiClient.js
-// Simple wrapper around the OpenAI Image API using axios.
-// We use the /images/generations endpoint for text -> image
-// and the /images/edits endpoint for image + prompt editing.
+// Wrapper minimal per le Image API di OpenAI usando axios.
 
 const axios = require("axios");
 const FormData = require("form-data");
 
 const apiKey = process.env.OPENAI_API_KEY;
+const BASE_URL = "https://api.openai.com/v1";
 
 if (!apiKey) {
   console.warn(
@@ -14,7 +13,31 @@ if (!apiKey) {
   );
 }
 
-const OPENAI_BASE_URL = "https://api.openai.com/v1";
+function buildAuthHeaders(extra = {}) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    ...extra,
+  };
+}
+
+function wrapOpenAIError(err, context) {
+  let detail = "";
+
+  // Error HTTP da OpenAI
+  if (err.response && err.response.data && err.response.data.error) {
+    const e = err.response.data.error;
+    detail = `${e.type || "openai_error"}: ${e.message || "Unknown error"}`;
+  } else if (err.message) {
+    // Error di rete / runtime
+    detail = err.message;
+  } else {
+    detail = String(err);
+  }
+
+  const wrapped = new Error(`[${context}] ${detail}`);
+  wrapped.originalError = err;
+  return wrapped;
+}
 
 /**
  * Generate an image from text.
@@ -23,98 +46,106 @@ const OPENAI_BASE_URL = "https://api.openai.com/v1";
  * @param {Object} params
  * @param {string} params.prompt
  * @param {string} [params.size="1024x1024"]
- * @returns {Promise<Buffer>}
  */
 async function generateImage({ prompt, size = "1024x1024" }) {
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set");
+    throw new Error("[generateImage] OPENAI_API_KEY is not set");
   }
 
-  const response = await axios.post(
-    `${OPENAI_BASE_URL}/images/generations`,
-    {
-      model: "gpt-image-1",
-      prompt,
-      n: 1,
-      size,
-      response_format: "b64_json",
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+  try {
+    const res = await axios.post(
+      `${BASE_URL}/images/generations`,
+      {
+        model: "gpt-image-1",
+        prompt,
+        n: 1,
+        size,
+        // response_format opzionale; lasciamo b64_json perché è comodo
+        response_format: "b64_json",
       },
-      // in case of bigger responses
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
+      {
+        headers: {
+          ...buildAuthHeaders({
+            "Content-Type": "application/json",
+          }),
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      }
+    );
+
+    if (
+      !res.data ||
+      !Array.isArray(res.data.data) ||
+      !res.data.data[0] ||
+      !res.data.data[0].b64_json
+    ) {
+      throw new Error("Unexpected response format from /images/generations");
     }
-  );
 
-  if (
-    !response.data ||
-    !Array.isArray(response.data.data) ||
-    !response.data.data[0] ||
-    !response.data.data[0].b64_json
-  ) {
-    throw new Error("Unexpected response format from OpenAI /images/generations");
+    const b64 = res.data.data[0].b64_json;
+    return Buffer.from(b64, "base64");
+  } catch (err) {
+    throw wrapOpenAIError(err, "generateImage");
   }
-
-  const b64 = response.data.data[0].b64_json;
-  return Buffer.from(b64, "base64");
 }
 
 /**
- * Edit an existing image using a prompt.
+ * Edit an existing image with a prompt.
  * Returns a Buffer (PNG).
  *
  * @param {Object} params
  * @param {string} params.prompt
+ * @param {Buffer} params.imageBuffer
  * @param {string} [params.size="1024x1024"]
- * @param {Buffer} params.imageBuffer - Image to edit.
- * @returns {Promise<Buffer>}
  */
 async function editImage({ prompt, size = "1024x1024", imageBuffer }) {
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set");
+    throw new Error("[editImage] OPENAI_API_KEY is not set");
   }
   if (!imageBuffer || !Buffer.isBuffer(imageBuffer)) {
-    throw new Error("editImage requires a valid imageBuffer (Buffer)");
+    throw new Error("[editImage] imageBuffer must be a Buffer");
   }
 
-  const form = new FormData();
-  form.append("model", "gpt-image-1");
-  form.append("prompt", prompt);
-  form.append("size", size);
-  // The filename + content type help OpenAI correctly parse the file
-  form.append("image", imageBuffer, {
-    filename: "image.png",
-    contentType: "image/png",
-  });
+  try {
+    const form = new FormData();
+    form.append("model", "gpt-image-1");
+    form.append("prompt", prompt);
+    form.append("size", size);
+    form.append("image", imageBuffer, {
+      filename: "image.png",
+      contentType: "image/png",
+    });
 
-  const response = await axios.post(
-    `${OPENAI_BASE_URL}/images/edits`,
-    form,
-    {
+    const res = await axios.post(`${BASE_URL}/images/edits`, form, {
       headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...form.getHeaders(),
+        ...buildAuthHeaders(form.getHeaders()),
       },
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
+    });
+
+    if (
+      !res.data ||
+      !Array.isArray(res.data.data) ||
+      !res.data.data[0] ||
+      (!res.data.data[0].b64_json && !res.data.data[0].url)
+    ) {
+      throw new Error("Unexpected response format from /images/edits");
     }
-  );
 
-  if (
-    !response.data ||
-    !Array.isArray(response.data.data) ||
-    !response.data.data[0] ||
-    !response.data.data[0].b64_json
-  ) {
-    throw new Error("Unexpected response format from OpenAI /images/edits");
+    // Preferiamo b64_json se disponibile, altrimenti scarichiamo la URL
+    if (res.data.data[0].b64_json) {
+      const b64 = res.data.data[0].b64_json;
+      return Buffer.from(b64, "base64");
+    }
+
+    const url = res.data.data[0].url;
+    const img = await axios.get(url, { responseType: "arraybuffer" });
+    return Buffer.from(img.data);
+  } catch (err) {
+    throw wrapOpenAIError(err, "editImage");
   }
-
-  const b64 = response.data.data[0].b64_json;
-  return Buffer.from(b64, "base64");
 }
 
 module.exports = {
