@@ -33,8 +33,7 @@ module.exports = {
 
   async execute(interaction, { openaiClient, sendStaffLog }) {
     const prompt = interaction.options.getString("prompt", true);
-    const size =
-      interaction.options.getString("size") || "1024x1024";
+    const size = interaction.options.getString("size") || "1024x1024";
     const referenceAttachment =
       interaction.options.getAttachment("reference_image");
 
@@ -42,7 +41,7 @@ module.exports = {
       await interaction.reply({
         content:
           "Invalid size. Allowed values: 512x512, 768x768, 1024x1024.",
-        ephemeral: true,
+        ephemeral: true
       });
       return;
     }
@@ -52,15 +51,14 @@ module.exports = {
     try {
       const imageBuffer = await openaiClient.generateImage({
         prompt,
-        size,
+        size
       });
 
       const resultAttachment = new AttachmentBuilder(imageBuffer, {
-        name: "generated.png",
+        name: "generated.png"
       });
 
-      let content =
-        "Here is your generated image. 🎨";
+      let content = "Here is your generated image. 🎨";
 
       if (referenceAttachment) {
         content +=
@@ -69,24 +67,23 @@ module.exports = {
 
       const files = [resultAttachment];
 
-      // Se vuoi ri-allegare anche l’immagine di riferimento, la puoi aggiungere così:
-      // (Discord accetta URL esterni come allegati)
+      // Se vuoi ri-allegare anche l’immagine di riferimento, la aggiungiamo come secondo file
       if (referenceAttachment) {
         files.push({
           attachment: referenceAttachment.url,
-          name: referenceAttachment.name || "reference.png",
+          name: referenceAttachment.name || "reference.png"
         });
       }
 
       await interaction.editReply({
         content,
-        files,
+        files
       });
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
 
       const message =
-        "An error occurred while generating the image. Please double-check your prompt (and any input image) and try again.";
+        "An error occurred while generating the image. Please try again later.";
 
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: message }).catch(() => {});
@@ -102,5 +99,5 @@ module.exports = {
         ).catch(() => {});
       }
     }
-  },
+  }
 };
