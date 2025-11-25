@@ -1,4 +1,4 @@
-// src/commands/edit.js
+// src/commands/blend.js (o edit.js se non rinomini il file)
 const {
   SlashCommandBuilder,
   AttachmentBuilder
@@ -6,18 +6,18 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("edit")
-    .setDescription("Edit an existing image with AI.")
+    .setName("blend")
+    .setDescription("Generate an image from a prompt + an image of reference.")
     .addAttachmentOption((option) =>
       option
         .setName("image")
-        .setDescription("Image to edit.")
+        .setDescription("Reference image.")
         .setRequired(true)
     )
     .addStringOption((option) =>
       option
         .setName("prompt")
-        .setDescription("Describe how you want to edit the image.")
+        .setDescription("Describe how you want the final image to look.")
         .setRequired(true)
     ),
 
@@ -48,26 +48,25 @@ module.exports = {
         attachment.url
       );
 
-      // 2) La mando all'API per l'edit
-      // Nessuna size: usiamo il default di openaiClient (1024x1024)
+      // 2) La mando all'API per generare l'immagine finale
       const editedBuffer = await openaiClient.editImage({
         imageBuffer,
         prompt
       });
 
       const editedAttachment = new AttachmentBuilder(editedBuffer, {
-        name: "edited.png"
+        name: "blend.png"
       });
 
       await interaction.editReply({
-        content: "Here is your edited image. ✂️",
+        content: "Here's your image🔥",
         files: [editedAttachment]
       });
     } catch (err) {
-      console.error("[edit] Error while editing image:", err);
+      console.error("[blend] Error while generating blended image:", err);
 
       let message =
-        "An error occurred while editing the image. Please check your prompt and input image, then try again.";
+        "An error occurred while generating the image. Please check your prompt and input image, then try again.";
       if (err && err.message) {
         message += `\n\nDetails: \`${err.message}\``;
       }
@@ -81,12 +80,12 @@ module.exports = {
             .catch(() => {});
         }
       } catch (replyErr) {
-        console.error("[edit] Failed to send error reply:", replyErr);
+        console.error("[blend] Failed to send error reply:", replyErr);
       }
 
       if (sendStaffLog) {
         sendStaffLog(
-          `Error in /edit: \`${err?.message}\`\n\`\`\`${err?.stack}\`\`\``
+          `Error in /blend: \`${err?.message}\`\n\`\`\`${err?.stack}\`\`\``
         ).catch(() => {});
       }
     }
