@@ -10,12 +10,6 @@ module.exports = {
         .setName("prompt")
         .setDescription("Describe the image you want to generate.")
         .setRequired(true)
-    )
-    .addAttachmentOption((option) =>
-      option
-        .setName("reference_image")
-        .setDescription("Optional reference image (visual inspiration).")
-        .setRequired(false)
     ),
 
   /**
@@ -24,13 +18,10 @@ module.exports = {
    */
   async execute(interaction, { openaiClient, sendStaffLog }) {
     const prompt = interaction.options.getString("prompt", true);
-    const referenceAttachment =
-      interaction.options.getAttachment("reference_image");
 
     await interaction.deferReply();
 
     try {
-      // Nessuna size: usiamo il default definito in openaiClient (1024x1024)
       const imageBuffer = await openaiClient.generateImage({
         prompt
       });
@@ -39,25 +30,11 @@ module.exports = {
         name: "generated.png"
       });
 
-      let content = "Here is your generated image. 🎨";
-
-      if (referenceAttachment) {
-        content +=
-          "\n\n(Reference image attached for context; the model does not edit it directly.)";
-      }
-
-      const files = [resultAttachment];
-
-      if (referenceAttachment) {
-        files.push({
-          attachment: referenceAttachment.url,
-          name: referenceAttachment.name || "reference.png"
-        });
-      }
+      const content = "Here is your generated image. 🎨";
 
       await interaction.editReply({
         content,
-        files
+        files: [resultAttachment]
       });
     } catch (err) {
       console.error("[prompt] Error while generating image:", err);
